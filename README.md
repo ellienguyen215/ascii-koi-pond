@@ -1,6 +1,6 @@
 # ASCII Koi Pond
 
-A living koi pond drawn entirely with text characters. Koi swim, turn, flick their fins and tails, and come to eat when you feed them.
+A living koi pond drawn entirely with text characters. Koi swim, turn, flick their fins and tails, and come to eat when you feed them. A big ASCII clock and today's date sit under the water.
 
 ## Controls
 
@@ -9,6 +9,7 @@ A living koi pond drawn entirely with text characters. Koi swim, turn, flick the
 | Click / tap | Splash — ripples spread and nearby koi dart away |
 | Right-click / hold | Drop food — koi swim over and eat it |
 | `1` `2` `3` | Change the water (teal, ink, paper) |
+| `C` | Show / hide the clock and date |
 | `Space` | Pause |
 
 ## Run it
