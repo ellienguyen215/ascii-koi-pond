@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ASCII Koi Pond</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0e2a32; }
+  canvas { display: block; width: 100vw; height: 100vh; cursor: crosshair; touch-action: none; }
+  #help {
+    position: fixed; left: 12px; bottom: 10px; font: 12px ui-monospace, Menlo, Consolas, monospace;
+    color: rgba(255,255,255,.55); background: rgba(0,0,0,.25); padding: 6px 10px; border-radius: 6px;
+    user-select: none; pointer-events: none; transition: opacity .6s;
+  }
+  body.light #help { color: rgba(0,0,0,.55); background: rgba(255,255,255,.4); }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="help">click: splash · right-click / hold: feed · 1 2 3: water · space: pause</div>
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const help = document.getElementById('help');
+
+  // ---------- themes ----------
+  const THEMES = {
+    1: { name: 'teal',  bg: '#0e2a32', water: ['#12404a', '#1a5560', '#246b77', '#3a8a94'], food: '#e8d08a', ripple: '#9fe3e8', light: false },
+    2: { name: 'ink',   bg: '#050607', water: ['#101418', '#182026', '#222c34', '#33414c'], food: '#d9c27a', ripple: '#c8d4dc', light: false },
+    3: { name: 'paper', bg: '#eef1ea', water: ['#dfe6dd', '#cdd8cc', '#b8c8b9', '#9fb3a3'], food: '#8a6a2a', ripple: '#5f8a86', light: true },
+  };
+  let theme = THEMES[1];
+
+  // koi colour palettes (classic varieties)
+  const VARIETIES = [
+    { body: '#f4f1ea', spots: ['#e2452b', '#e2452b'] },          // kohaku: white + red
+    { body: '#f4f1ea', spots: ['#e2452b', '#222222'] },          // sanke: white, red, black
+    { body: '#f0a531', spots: ['#ffd36a', '#f7c04a'] },          // ogon-ish gold
+    { body: '#ee6a2a', spots: ['#f4f1ea', '#ffb070'] },          // orange + white
+    { body: '#2a2a2e', spots: ['#e2452b', '#f4f1ea'] },          // showa: black base
+  ];
+  const DARK_OVERRIDE = { '#2a2a2e': '#4a4a52', '#222222': '#3a3a40' };
+
+  // ---------- grid ----------
+  const FONT_PX = 10;
+  let cw, ch, cols, rows, dpr;
+  function resize() {
+    dpr = window.devicePixelRatio || 1;
+    canvas.width = innerWidth * dpr;
+    canvas.height = innerHeight * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.font = `${FONT_PX}px ui-monospace, Menlo, Consolas, monospace`;
+    cw = ctx.measureText('M').width;
+    ch = FONT_PX * 1.0;
+    cols = Math.ceil(innerWidth / cw);
+    rows = Math.ceil(innerHeight / ch);
+    ctx.textBaseline = 'top';
+  }
+  resize();
+  addEventListener('resize', resize);
+
+  // ---------- koi ----------
+  const SEG = 12;
+  function makeKoi(i) {
+    const v = VARIETIES[i % VARIETIES.length];
+    const size = 0.8 + Math.random() * 0.45;
+    const x = 150 + Math.random() * (innerWidth - 300), y = 150 + Math.random() * (innerHeight - 300);
+    const a = Math.random() * Math.PI * 2;
+    const spine = [];
+    for (let s = 0; s < SEG; s++) spine.push({ x: x - Math.cos(a) * s * 16 * size, y: y - Math.sin(a) * s * 16 * size });
+    return { spine, a, speed: 1, base: 0.8 + Math.random() * 0.5, size, v,
+             seed: [Math.random() * 9, Math.random() * 9, Math.random() * 9],
+             phase: Math.random() * 10, turn: 0, wanderT: 0, fear: 0 };
+  }
+  let koi = [];
+  const KOI_COUNT = Math.max(4, Math.min(8, Math.round(innerWidth * innerHeight / 260000)));
+  for (let i = 0; i < KOI_COUNT; i++) koi.push(makeKoi(i));
+
+  // ---------- food & ripples ----------
+  const food = [];      // {x,y,life}
+  const ripples = [];   // {x,y,r,max}
+
+  function angleDiff(a, b) { let d = b - a; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; return d; }
+
+  function updateKoi(k, t) {
+    const head = k.spine[0];
+    // choose a heading
+    let target = null, best = 260 * 260;
+    for (const f of food) {
+      const dx = f.x - head.x, dy = f.y - head.y, d = dx * dx + dy * dy;
+      if (d < best) { best = d; target = f; }
+    }
+    let desired;
+    if (k.fear > 0) {
+      desired = k.a; k.fear -= 1;
+    } else if (target) {
+      desired = Math.atan2(target.y - head.y, target.x - head.x);
+      if (best < 100) { target.life = 0; k.speed = 0.6; }   // eaten!
+    } else {
+      k.wanderT -= 1;
+      if (k.wanderT <= 0) { k.turn = (Math.random() - 0.5) * 0.04; k.wanderT = 60 + Math.random() * 160; }
+      desired = k.a + k.turn * 20;
+    }
+    // steer away from edges
+    const m = 110;
+    let ex = 0, ey = 0;
+    if (head.x < m) ex = 1; else if (head.x > innerWidth - m) ex = -1;
+    if (head.y < m) ey = 1; else if (head.y > innerHeight - m) ey = -1;
+    if (ex || ey) { desired = Math.atan2(ey, ex); k.fear = 0; }
+    // avoid other koi heads a little
+    for (const o of koi) if (o !== k) {
+      const dx = head.x - o.spine[0].x, dy = head.y - o.spine[0].y, d = Math.hypot(dx, dy);
+      if (d < 40) desired += angleDiff(desired, Math.atan2(dy, dx)) * 0.15;
+    }
+    k.a += angleDiff(k.a, desired) * (target || k.fear > 0 ? 0.06 : 0.025);
+
+    const goal = (k.fear > 0 ? 3.2 : target ? 1.9 : k.base);
+    k.speed += (goal - k.speed) * 0.05;
+    k.phase += 0.12 * k.speed + 0.03;
+
+    const wig = Math.sin(k.phase) * 0.25;
+    head.x += Math.cos(k.a + wig * 0.3) * k.speed;
+    head.y += Math.sin(k.a + wig * 0.3) * k.speed;
+
+    // body follows head (rope)
+    const L = 16 * k.size;
+    for (let s = 1; s < SEG; s++) {
+      const p = k.spine[s], q = k.spine[s - 1];
+      // tail sways
+      const sway = Math.sin(k.phase - s * 0.45) * (s / SEG) * 1.4;
+      const perp = Math.atan2(q.y - p.y, q.x - p.x) + Math.PI / 2;
+      p.x += Math.cos(perp) * sway * 0.35;
+      p.y += Math.sin(perp) * sway * 0.35;
+      const dx = p.x - q.x, dy = p.y - q.y, d = Math.hypot(dx, dy) || 1;
+      p.x = q.x + dx / d * L; p.y = q.y + dy / d * L;
+    }
+  }
+
+  // ---------- drawing ----------
+  const WATER_CH = [' ', '.', '·', '-', '~', '≈'];
+  let cellCh, cellCol, cellPri;
+
+  function hex2rgb(h) { const n = parseInt(h.slice(1), 16); return [n >> 16, (n >> 8) & 255, n & 255]; }
+  function mix(a, b, t) {
+    const A = hex2rgb(a), B = hex2rgb(b);
+    return '#' + A.map((v, i) => Math.round(v + (B[i] - v) * t).toString(16).padStart(2, '0')).join('');
+  }
+  const mixCache = new Map();
+  function mixC(a, b, t) { const k = a + b + t; let v = mixCache.get(k); if (!v) mixCache.set(k, v = mix(a, b, t)); return v; }
+
+  // body half-width (0..1 of max) along the fish, u = 0 nose .. 1 tail root
+  function bodyW(u) {
+    if (u < 0.12) return 0.55 + 0.45 * Math.sin(u / 0.12 * Math.PI / 2);   // rounded head
+    if (u < 0.30) return 1.0;
+    if (u < 0.86) return 0.16 + 0.84 * (0.5 + 0.5 * Math.cos((u - 0.30) / 0.56 * Math.PI)); // taper
+    return 0.16;
+  }
+
+  function put(gx, gy, c, col, pri) {
+    if (gx < 0 || gy < 0 || gx >= cols || gy >= rows) return;
+    const idx = gy * cols + gx;
+    if (pri > cellPri[idx]) { cellPri[idx] = pri; cellCh[idx] = c; cellCol[idx] = col; }
+  }
+
+  function drawKoi(k, zbase) {
+    const sp = k.spine, W = 36 * k.size, n = SEG - 1;
+    const v = k.v;
+    let body = v.body, spots = v.spots;
+    if (!theme.light) { body = DARK_OVERRIDE[body] || body; spots = spots.map(c => DARK_OVERRIDE[c] || c); }
+    const rim = mixC(body, theme.bg, 0.35);
+    const finCol = mixC(body, theme.bg, 0.25);
+    const finFaint = mixC(body, theme.bg, 0.5);
+    const flap = 0.75 + 0.25 * Math.sin(k.phase * 0.9);
+
+    // bounding box
+    let minx = 1e9, miny = 1e9, maxx = -1e9, maxy = -1e9;
+    for (const p of sp) { minx = Math.min(minx, p.x); maxx = Math.max(maxx, p.x); miny = Math.min(miny, p.y); maxy = Math.max(maxy, p.y); }
+    const pad = W * 1.9;
+    const gx0 = Math.max(0, Math.floor((minx - pad) / cw)), gx1 = Math.min(cols - 1, Math.ceil((maxx + pad) / cw));
+    const gy0 = Math.max(0, Math.floor((miny - pad) / ch)), gy1 = Math.min(rows - 1, Math.ceil((maxy + pad) / ch));
+
+    for (let gy = gy0; gy <= gy1; gy++) for (let gx = gx0; gx <= gx1; gx++) {
+      const cx = (gx + 0.5) * cw, cy = (gy + 0.5) * ch;
+      // nearest point on the spine
+      let best = 1e18, bt = 0, blat = 0, beyondTail = 0, beforeHead = 0;
+      for (let i = 0; i < n; i++) {
+        const a = sp[i], b = sp[i + 1];
+        const dx = b.x - a.x, dy = b.y - a.y, L2 = dx * dx + dy * dy || 1;
+        const rx = cx - a.x, ry = cy - a.y;
+        let h = (rx * dx + ry * dy) / L2;
+        const raw = h;
+        h = h < 0 ? 0 : h > 1 ? 1 : h;
+        const px = a.x + dx * h - cx, py = a.y + dy * h - cy;
+        const d2 = px * px + py * py;
+        if (d2 < best) {
+          best = d2; bt = i + h;
+          const len = Math.sqrt(L2);
+          blat = (dx * ry - dy * rx) / len;
+          beyondTail = (i === n - 1 && raw > 1) ? (raw - 1) * len : 0;
+          beforeHead = (i === 0 && raw < 0) ? -raw * len : 0;
+        }
+      }
+      const u = bt / n;
+      const lat = Math.abs(blat);
+
+      // --- tail fan (behind the last spine point) ---
+      if (beyondTail > 0) {
+        const tl = beyondTail / (W * 1.7);            // 0..1 along the fan
+        if (tl < 1) {
+          const sway = Math.sin(k.phase - 5) * 0.25;
+          const off = blat / W - sway * tl;
+          const spread = Math.max(ch * 0.7 / W, 0.2 + tl * 1.0);            // fan widens
+          const notch = tl > 0.55 ? (tl - 0.55) * 1.0 : 0; // forked tail
+          const ao = Math.abs(off);
+          if (ao < spread && ao >= notch) {
+            const edge = ao / spread;
+            const c = edge > 0.8 ? '.' : (tl < 0.25 ? '=' : off > 0.08 ? '\\' : off < -0.08 ? '/' : '|');
+            put(gx, gy, c, edge > 0.8 ? finFaint : finCol, zbase + 1);
+          }
+        }
+        continue;
+      }
+
+      // --- body ---
+      const bw = Math.max(ch * 0.7, (beforeHead > 0 ? 0.55 : bodyW(u)) * W);
+      const rr = beforeHead > 0 ? Math.hypot(beforeHead, blat) : lat;
+      if (rr < bw) {
+        const l = rr / bw;                            // 0 centre .. 1 edge
+        // koi spot pattern (smooth blobs in fish-local coords)
+        const sl = blat / W, su = u, sd = k.seed;
+        const nv = Math.sin(su * 10 + sd[0]) + Math.sin(su * 6.5 + sl * 2.8 + sd[1]) + Math.sin(sl * 3.4 - su * 4 + sd[2]);
+        let col = body;
+        if (nv > 0.9) col = spots[0];
+        else if (nv < -1.6) col = spots[1];
+        let c;
+        if (l > 0.82) { c = '*'; col = mixC(col, theme.bg, 0.3); }
+        else if (l > 0.6) c = '#';
+        else c = '@';
+        if (u > 0.82) c = l > 0.6 ? '*' : '#';
+        put(gx, gy, c, col, zbase + 3);
+        continue;
+      }
+
+      // --- pectoral fins ---
+      if (u > 0.16 && u < 0.42) {
+        const fu = (u - 0.16) / 0.26;                 // 0..1 along fin root
+        const reach = W * 0.95 * flap * Math.sin(Math.min(1, fu * 1.4) * Math.PI) ;
+        const out = rr - bw;
+        if (out < reach * (1 - fu * 0.3)) {
+          const e = out / (reach || 1);
+          put(gx, gy, e > 0.7 ? '.' : (blat > 0 ? '\\' : '/'), e > 0.6 ? finFaint : finCol, zbase + 2);
+          continue;
+        }
+      }
+      // --- small pelvic fins ---
+      if (u > 0.52 && u < 0.62) {
+        const out = rr - bw;
+        if (out < W * 0.32 * flap) put(gx, gy, '.', finFaint, zbase + 2);
+      }
+    }
+
+    // eyes
+    const h0 = sp[0], h1 = sp[1];
+    const ang = Math.atan2(h0.y - h1.y, h0.x - h1.x);
+    const ex = h0.x - Math.cos(ang) * W * 0.25, ey = h0.y - Math.sin(ang) * W * 0.25;
+    const eyeCol = theme.light ? '#111111' : '#05090a';
+    for (const side of [1, -1]) {
+      const px = ex + Math.cos(ang + side * Math.PI / 2) * W * 0.38;
+      const py = ey + Math.sin(ang + side * Math.PI / 2) * W * 0.38;
+      put(Math.floor(px / cw), Math.floor(py / ch), '0', eyeCol, zbase + 4);
+    }
+  }
+
+  function draw(t) {
+    const n = cols * rows;
+    if (!cellCh || cellCh.length !== n) { cellCh = new Array(n); cellCol = new Array(n); cellPri = new Float32Array(n); }
+    cellPri.fill(0);
+    koi.forEach((k, i) => drawKoi(k, i * 5));
+
+    // background
+    ctx.fillStyle = theme.bg;
+    ctx.fillRect(0, 0, innerWidth, innerHeight);
+
+    const buckets = new Map();
+    const push = (color, x, y, c) => { let b = buckets.get(color); if (!b) buckets.set(color, b = []); b.push(x, y, c); };
+
+    for (let gy = 0; gy < rows; gy++) {
+      for (let gx = 0; gx < cols; gx++) {
+        const idx = gy * cols + gx;
+        const px = gx * cw, py = gy * ch;
+        if (cellPri[idx] > 0) { push(cellCol[idx], px, py, cellCh[idx]); continue; }
+        // water shimmer
+        let w = Math.sin(gx * 0.11 + t * 0.0009) + Math.sin(gy * 0.23 - t * 0.0011 + gx * 0.05)
+              + Math.sin((gx + gy) * 0.07 + t * 0.0006);
+        w = (w + 3) / 6; // 0..1
+        // ripples
+        let rip = 0;
+        for (const r of ripples) {
+          const dx = px - r.x, dy = (py - r.y) * 1.0, dist = Math.hypot(dx, dy);
+          const band = Math.abs(dist - r.r);
+          if (band < 10) rip = Math.max(rip, (1 - band / 10) * (1 - r.r / r.max));
+        }
+        if (rip > 0.15) {
+          push(theme.ripple, px, py, rip > 0.6 ? 'o' : rip > 0.35 ? '°' : '.');
+          continue;
+        }
+        const wi = Math.floor(Math.pow(w, 2.2) * WATER_CH.length * 0.999);
+        if (wi === 0) continue;
+        push(theme.water[Math.min(3, wi - 1)], px, py, WATER_CH[wi]);
+      }
+    }
+
+    // food pellets
+    for (const f of food) {
+      const gx = Math.floor(f.x / cw), gy = Math.floor(f.y / ch);
+      push(theme.food, gx * cw, gy * ch, f.life > 400 ? 'o' : '°');
+    }
+
+    for (const [color, arr] of buckets) {
+      ctx.fillStyle = color;
+      for (let i = 0; i < arr.length; i += 3) ctx.fillText(arr[i + 2], arr[i], arr[i + 1]);
+    }
+
+    if (paused) {
+      ctx.fillStyle = theme.light ? 'rgba(0,0,0,.5)' : 'rgba(255,255,255,.6)';
+      const msg = '[ paused ]';
+      ctx.fillText(msg, innerWidth / 2 - ctx.measureText(msg).width / 2, innerHeight / 2);
+    }
+  }
+
+  // ---------- loop ----------
+  let paused = false, last = 0, clock = 0;
+  function frame(now) {
+    const dt = Math.min(50, now - last); last = now;
+    if (!paused) {
+      clock += dt;
+      for (const k of koi) updateKoi(k, clock);
+      for (let i = ripples.length - 1; i >= 0; i--) { ripples[i].r += 2.2; if (ripples[i].r > ripples[i].max) ripples.splice(i, 1); }
+      for (let i = food.length - 1; i >= 0; i--) {
+        const f = food[i];
+        f.life -= 1; f.x += Math.sin(clock * 0.002 + i) * 0.08; f.y += Math.cos(clock * 0.0017 + i) * 0.06;
+        if (f.life <= 0) food.splice(i, 1);
+      }
+    }
+    draw(clock);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  // ---------- input ----------
+  function splash(x, y) {
+    ripples.push({ x, y, r: 0, max: 160 });
+    setTimeout(() => ripples.push({ x, y, r: 0, max: 110 }), 160);
+    for (const k of koi) {
+      const h = k.spine[0], d = Math.hypot(h.x - x, h.y - y);
+      if (d < 180) { k.a = Math.atan2(h.y - y, h.x - x); k.fear = 50 + Math.random() * 30; }
+    }
+  }
+  function feed(x, y) {
+    for (let i = 0; i < 6; i++) food.push({ x: x + (Math.random() - 0.5) * 50, y: y + (Math.random() - 0.5) * 40, life: 900 + Math.random() * 300 });
+    ripples.push({ x, y, r: 0, max: 60 });
+  }
+
+  canvas.addEventListener('contextmenu', e => { e.preventDefault(); feed(e.clientX, e.clientY); });
+
+  let holdTimer = null, held = false, downPos = null;
+  canvas.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    downPos = { x: e.clientX, y: e.clientY }; held = false;
+    holdTimer = setTimeout(() => { held = true; feed(downPos.x, downPos.y); }, 450);
+  });
+  canvas.addEventListener('pointerup', e => {
+    if (e.button !== 0 || !downPos) return;
+    clearTimeout(holdTimer);
+    if (!held) splash(downPos.x, downPos.y);
+    downPos = null;
+  });
+  canvas.addEventListener('pointercancel', () => { clearTimeout(holdTimer); downPos = null; });
+
+  addEventListener('keydown', e => {
+    if (THEMES[e.key]) {
+      theme = THEMES[e.key];
+      document.body.style.background = theme.bg;
+      document.body.classList.toggle('light', theme.light);
+    } else if (e.code === 'Space') { paused = !paused; e.preventDefault(); }
+  });
+
+  setTimeout(() => help.style.opacity = '0.35', 8000);
+})();
+</script>
+</body>
+</html>
