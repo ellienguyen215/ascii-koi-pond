@@ -26,9 +26,9 @@
 
   // ---------- themes ----------
   const THEMES = {
-    1: { name: 'teal',  bg: '#0e2a32', water: ['#12404a', '#1a5560', '#246b77', '#3a8a94'], food: '#e8d08a', ripple: '#9fe3e8', clock: '#7cc4cc', date: '#5fa3ab', light: false },
-    2: { name: 'ink',   bg: '#050607', water: ['#101418', '#182026', '#222c34', '#33414c'], food: '#d9c27a', ripple: '#c8d4dc', clock: '#9aa8b2', date: '#6f7d88', light: false },
-    3: { name: 'paper', bg: '#eef1ea', water: ['#dfe6dd', '#cdd8cc', '#b8c8b9', '#9fb3a3'], food: '#8a6a2a', ripple: '#5f8a86', clock: '#6f8f7f', date: '#86a294', light: true },
+    1: { name: 'teal',  bg: '#0e2a32', water: ['#12404a', '#1a5560', '#246b77', '#3a8a94'], food: '#e8d08a', ripple: '#9fe3e8', clock: '#e6fbfc', date: '#b5e6ea', light: false },
+    2: { name: 'ink',   bg: '#050607', water: ['#101418', '#182026', '#222c34', '#33414c'], food: '#d9c27a', ripple: '#c8d4dc', clock: '#f2f5f7', date: '#c3ccd3', light: false },
+    3: { name: 'paper', bg: '#eef1ea', water: ['#dfe6dd', '#cdd8cc', '#b8c8b9', '#9fb3a3'], food: '#8a6a2a', ripple: '#5f8a86', clock: '#1f3a31', date: '#3d5c4f', light: true },
   };
   let theme = THEMES[1];
 
@@ -294,14 +294,19 @@
     const blink = now.getSeconds() % 2 === 0;
 
     // size each "pixel" of the big digits so the clock fits the screen
-    const sx = Math.max(2, Math.min(6, Math.floor(cols / 40)));   // cols per pixel
+    const sx = Math.max(3, Math.min(12, Math.floor(cols / 24)));   // cols per pixel
     const sy = Math.max(2, Math.round(sx * cw / ch));              // rows per pixel (keeps it square)
     const gap = sx;
     let wpx = 0;
     for (const c of time) wpx += FONT[c][0].length * sx + gap;
     wpx -= gap;
     const x0 = Math.floor((cols - wpx) / 2);
-    const y0 = Math.floor(rows * 0.42 - (5 * sy) / 2);
+    const y0 = Math.floor(rows * 0.4 - (5 * sy) / 2);
+
+    // calm, clear water behind the clock so it stands out
+    const dateY = y0 + 5 * sy + Math.max(2, sy);
+    const bx0 = x0 - 2 * sx, bx1 = x0 + wpx + 2 * sx + 3, by0 = y0 - sy, by1 = dateY + 2;
+    for (let gy = by0; gy <= by1; gy++) for (let gx = bx0; gx <= bx1; gx++) put(gx, gy, ' ', theme.bg, 0.2);
 
     let x = x0;
     for (const c of time) {
@@ -311,8 +316,7 @@
         for (let r = 0; r < 5; r++) for (let q = 0; q < gw; q++) {
           if (g[r][q] !== '#') continue;
           for (let yy = 0; yy < sy; yy++) for (let xx = 0; xx < sx; xx++) {
-            const edge = yy === 0 || yy === sy - 1 || xx === 0 || xx === sx - 1;
-            put(x + q * sx + xx, y0 + r * sy + yy, edge ? '+' : '#', theme.clock, 0.5);
+            put(x + q * sx + xx, y0 + r * sy + yy, '#', theme.clock, 1000);
           }
         }
       }
@@ -323,19 +327,19 @@
     // date underneath, letter-spaced
     const date = (DAYS[now.getDay()] + '  ' + MONTHS[now.getMonth()] + ' ' + now.getDate() + ', ' + now.getFullYear()).toUpperCase();
     const spaced = date.split('').join(' ');
-    putText(spaced, Math.floor((cols - spaced.length) / 2), y0 + 5 * sy + Math.max(2, sy), theme.date);
+    putText(spaced, Math.floor((cols - spaced.length) / 2), dateY, theme.date);
   }
 
   function putText(str, gx, gy, col) {
-    for (let i = 0; i < str.length; i++) if (str[i] !== ' ') put(gx + i, gy, str[i], col, 0.5);
+    for (let i = 0; i < str.length; i++) if (str[i] !== ' ') put(gx + i, gy, str[i], col, 1000);
   }
 
   function draw(t) {
     const n = cols * rows;
     if (!cellCh || cellCh.length !== n) { cellCh = new Array(n); cellCol = new Array(n); cellPri = new Float32Array(n); }
     cellPri.fill(0);
-    if (showClock) drawClock();
     koi.forEach((k, i) => drawKoi(k, i * 5 + 1));
+    if (showClock) drawClock();
 
     // background
     ctx.fillStyle = theme.bg;
