@@ -17,7 +17,7 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div id="help">click: splash · right-click / hold: feed · 1 2 3: water · c: clock · space: pause</div>
+<div id="help">click: splash · right-click / hold: feed · 1 2 3: water · 5: rain · c: clock · space: pause</div>
 <script>
 (() => {
   const canvas = document.getElementById('c');
@@ -26,9 +26,9 @@
 
   // ---------- themes ----------
   const THEMES = {
-    1: { name: 'teal',  bg: '#0e2a32', water: ['#12404a', '#1a5560', '#246b77', '#3a8a94'], food: '#e8d08a', ripple: '#9fe3e8', clock: '#e6fbfc', date: '#b5e6ea', light: false },
-    2: { name: 'ink',   bg: '#050607', water: ['#101418', '#182026', '#222c34', '#33414c'], food: '#d9c27a', ripple: '#c8d4dc', clock: '#f2f5f7', date: '#c3ccd3', light: false },
-    3: { name: 'paper', bg: '#eef1ea', water: ['#dfe6dd', '#cdd8cc', '#b8c8b9', '#9fb3a3'], food: '#8a6a2a', ripple: '#5f8a86', clock: '#1f3a31', date: '#3d5c4f', light: true },
+    1: { name: 'teal',  bg: '#0e2a32', water: ['#12404a', '#1a5560', '#246b77', '#3a8a94'], food: '#e8d08a', ripple: '#9fe3e8', clock: '#e6fbfc', date: '#b5e6ea', pad: '#3f9e5a', padHi: '#62bd76', vein: '#9ae0a6', rim: '#2f8048', light: false },
+    2: { name: 'ink',   bg: '#050607', water: ['#101418', '#182026', '#222c34', '#33414c'], food: '#d9c27a', ripple: '#c8d4dc', clock: '#f2f5f7', date: '#c3ccd3', pad: '#3a8a50', padHi: '#55a868', vein: '#8fd49c', rim: '#2a6a3c', light: false },
+    3: { name: 'paper', bg: '#eef1ea', water: ['#dfe6dd', '#cdd8cc', '#b8c8b9', '#9fb3a3'], food: '#8a6a2a', ripple: '#5f8a86', clock: '#1f3a31', date: '#3d5c4f', pad: '#5c9e60', padHi: '#7bb87d', vein: '#3f7f46', rim: '#3a6e3f', light: true },
   };
   let theme = THEMES[1];
 
@@ -58,7 +58,7 @@
     ctx.textBaseline = 'top';
   }
   resize();
-  addEventListener('resize', resize);
+  addEventListener('resize', () => { resize(); if (typeof placePads === 'function') placePads(); });
 
   // ---------- koi ----------
   const SEG = 12;
@@ -96,7 +96,7 @@
       desired = k.a; k.fear -= 1;
     } else if (target) {
       desired = Math.atan2(target.y - head.y, target.x - head.x);
-      if (best < 100) { target.life = 0; k.speed = 0.6; }   // eaten!
+      if (best < 100) { target.life = 0; k.speed = 0.6; burstBubbles(head.x, head.y, 3 + (Math.random() * 3 | 0)); }   // eaten!
     } else {
       k.wanderT -= 1;
       if (k.wanderT <= 0) { k.turn = (Math.random() - 0.5) * 0.04; k.wanderT = 60 + Math.random() * 160; }
@@ -119,6 +119,7 @@
     k.speed += (goal - k.speed) * 0.05;
     k.phase += 0.12 * k.speed + 0.03;
 
+    if (Math.random() < 0.004) burstBubbles(head.x, head.y, 1);
     const wig = Math.sin(k.phase) * 0.25;
     head.x += Math.cos(k.a + wig * 0.3) * k.speed;
     head.y += Math.sin(k.a + wig * 0.3) * k.speed;
@@ -334,11 +335,149 @@
     for (let i = 0; i < str.length; i++) if (str[i] !== ' ') put(gx + i, gy, str[i], col, 1000);
   }
 
+  // ---------- lily pads & lotuses ----------
+  const LOTUS = { outer: '#ff7fb0', inner: '#ffd0e3', heart: '#ffd65a' };
+  let pads = [];
+  function placePads() {
+    pads = [];
+    const count = Math.max(4, Math.min(8, Math.round(innerWidth * innerHeight / 160000)));
+    for (let tries = 0; pads.length < count && tries < 400; tries++) {
+      const R = 38 + Math.random() * 30;
+      const x = R + Math.random() * (innerWidth - 2 * R), y = R + Math.random() * (innerHeight - 2 * R);
+      // keep the middle (where the clock lives) clear
+      if (x > innerWidth * 0.18 && x < innerWidth * 0.82 && y > innerHeight * 0.18 && y < innerHeight * 0.66) continue;
+      if (pads.some(p => Math.hypot(p.ax - x, p.ay - y) < p.R + R + 18)) continue;
+      pads.push({ ax: x, ay: y, x, y, R, s: 1, notch: Math.random() * Math.PI * 2, phase: Math.random() * 10,
+                  bob: 0, bobT: 0, lotus: Math.random() < 0.5, rot: Math.random() * 3 });
+    }
+    if (!pads.some(p => p.lotus) && pads.length) pads[0].lotus = true;
+  }
+  placePads();
+
+  function updatePads(t) {
+    for (const p of pads) {
+      p.x = p.ax + Math.sin(t * 0.0003 + p.phase) * 7;
+      p.y = p.ay + Math.cos(t * 0.00025 + p.phase) * 5;
+      p.bobT += 0.22; p.bob *= 0.965;
+      p.s = 1 + 0.035 * Math.sin(t * 0.0016 + p.phase) + p.bob * 0.16 * Math.sin(p.bobT);
+    }
+  }
+  function padAt(x, y) { return pads.find(p => Math.hypot(p.x - x, p.y - y) < p.R * p.s); }
+  function bobPad(p, amount) { if (amount >= 1) p.bobT = 0; p.bob = Math.min(1, p.bob + amount); }
+
+  function drawPads() {
+    for (const p of pads) {
+      const R = p.R * p.s;
+      const gx0 = Math.max(0, Math.floor((p.x - R) / cw)), gx1 = Math.min(cols - 1, Math.ceil((p.x + R) / cw));
+      const gy0 = Math.max(0, Math.floor((p.y - R) / ch)), gy1 = Math.min(rows - 1, Math.ceil((p.y + R) / ch));
+      const tilt = p.bob * 0.4 * Math.sin(p.bobT);   // the pad rocks while bobbing
+      for (let gy = gy0; gy <= gy1; gy++) for (let gx = gx0; gx <= gx1; gx++) {
+        const dx = (gx + 0.5) * cw - p.x, dy = (gy + 0.5) * ch - p.y;
+        const d = Math.hypot(dx, dy) / R;
+        if (d > 1) continue;
+        const a = Math.atan2(dy, dx);
+        if (d > 0.08 && Math.abs(angleDiff(a, p.notch + tilt * 0.3)) < 0.3) continue;   // the classic notch
+        let c, col;
+        if (d > 0.86) { c = 'o'; col = theme.rim; }
+        else {
+          const vein = Math.abs(((a - p.notch + Math.PI * 4) % (Math.PI * 2 / 9)) - Math.PI / 9) > Math.PI / 9 - 0.07;
+          if (vein && d > 0.12) { c = '+'; col = theme.vein; }
+          else { c = '%'; col = (dx + dy) * (1 + tilt) < 0 ? theme.padHi : theme.pad; }
+        }
+        put(gx, gy, c, col, 500);
+      }
+      if (p.lotus) drawLotus(p.x + Math.cos(p.notch + Math.PI) * R * 0.18, p.y + Math.sin(p.notch + Math.PI) * R * 0.12, R * 0.62, p.rot + tilt * 0.5);
+    }
+  }
+
+  function drawLotus(x, y, F, rot) {
+    const gx0 = Math.max(0, Math.floor((x - F) / cw)), gx1 = Math.min(cols - 1, Math.ceil((x + F) / cw));
+    const gy0 = Math.max(0, Math.floor((y - F) / ch)), gy1 = Math.min(rows - 1, Math.ceil((y + F) / ch));
+    for (let gy = gy0; gy <= gy1; gy++) for (let gx = gx0; gx <= gx1; gx++) {
+      const dx = (gx + 0.5) * cw - x, dy = (gy + 0.5) * ch - y;
+      const d = Math.hypot(dx, dy), a = Math.atan2(dy, dx);
+      if (d < F * 0.22) { put(gx, gy, 'o', LOTUS.heart, 520); continue; }
+      // two rings of petals, offset from each other
+      const outer = F * (0.45 + 0.55 * Math.pow(Math.abs(Math.cos(3 * (a - rot))), 0.7));
+      const inner = F * 0.7 * (0.5 + 0.5 * Math.pow(Math.abs(Math.cos(3 * (a - rot) + Math.PI / 2)), 0.7));
+      if (d < inner) put(gx, gy, '@', LOTUS.inner, 520);
+      else if (d < outer) put(gx, gy, d > outer * 0.8 ? '*' : '@', LOTUS.outer, 520);
+    }
+  }
+
+  // ---------- bubbles ----------
+  const bubbles = [];
+  function burstBubbles(x, y, n) {
+    for (let i = 0; i < n; i++) setTimeout(() => bubbles.push({
+      x: x + (Math.random() - 0.5) * 22, y: y + (Math.random() - 0.5) * 16,
+      life: 0, max: 50 + Math.random() * 60, drift: (Math.random() - 0.5) * 0.4 }), i * 140);
+  }
+  function updateBubbles() {
+    for (let i = bubbles.length - 1; i >= 0; i--) {
+      const b = bubbles[i];
+      b.life++; b.x += b.drift; b.y -= 0.12;
+      if (b.life >= b.max) { ripples.push({ x: b.x, y: b.y, r: 0, max: 16, band: 4, sp: 1 }); bubbles.splice(i, 1); }
+    }
+  }
+  function drawBubbles() {
+    for (const b of bubbles) {
+      const p = b.life / b.max;
+      const c = p < 0.25 ? '.' : p < 0.6 ? 'o' : p < 0.93 ? 'O' : '*';
+      put(Math.floor(b.x / cw), Math.floor(b.y / ch), c, theme.ripple, 600);
+    }
+  }
+
+  // ---------- rain ----------
+  let raining = false, rainLevel = 0;
+  const drops = [];
+  function updateRain() {
+    rainLevel += ((raining ? 1 : 0) - rainLevel) * 0.02;
+    const rate = rainLevel * innerWidth * innerHeight / 90000;
+    let n = Math.floor(rate) + (Math.random() < rate % 1 ? 1 : 0);
+    while (n--) drops.push({ x: Math.random() * innerWidth, y: Math.random() * innerHeight, t: 5 + (Math.random() * 3 | 0) });
+    for (let i = drops.length - 1; i >= 0; i--) {
+      const d = drops[i];
+      if (--d.t <= 0) {
+        ripples.push({ x: d.x, y: d.y, r: 0, max: 16 + Math.random() * 22, band: 5, sp: 1.2, amp: 0.9 });
+        const p = padAt(d.x, d.y); if (p) bobPad(p, 0.12);
+        drops.splice(i, 1);
+      }
+    }
+  }
+  function drawRain() {
+    for (const d of drops) {
+      const x = d.x - d.t * 4, y = d.y - d.t * 10;
+      put(Math.floor(x / cw), Math.floor(y / ch), d.t > 2 ? '\\' : "'", theme.ripple, 700);
+    }
+  }
+
+  // ---------- ripple buffer ----------
+  let ripBuf;
+  function stampRipples() {
+    ripBuf.fill(0);
+    for (const r of ripples) {
+      const band = r.band || 10, amp = r.amp || 1, fade = 1 - r.r / r.max;
+      const ext = r.r + band;
+      const gx0 = Math.max(0, Math.floor((r.x - ext) / cw)), gx1 = Math.min(cols - 1, Math.ceil((r.x + ext) / cw));
+      const gy0 = Math.max(0, Math.floor((r.y - ext) / ch)), gy1 = Math.min(rows - 1, Math.ceil((r.y + ext) / ch));
+      for (let gy = gy0; gy <= gy1; gy++) for (let gx = gx0; gx <= gx1; gx++) {
+        const b = Math.abs(Math.hypot(gx * cw - r.x, gy * ch - r.y) - r.r);
+        if (b >= band) continue;
+        const v = (1 - b / band) * fade * amp, idx = gy * cols + gx;
+        if (v > ripBuf[idx]) ripBuf[idx] = v;
+      }
+    }
+  }
+
   function draw(t) {
     const n = cols * rows;
-    if (!cellCh || cellCh.length !== n) { cellCh = new Array(n); cellCol = new Array(n); cellPri = new Float32Array(n); }
+    if (!cellCh || cellCh.length !== n) { cellCh = new Array(n); cellCol = new Array(n); cellPri = new Float32Array(n); ripBuf = new Float32Array(n); }
     cellPri.fill(0);
     koi.forEach((k, i) => drawKoi(k, i * 5 + 1));
+    drawPads();
+    drawBubbles();
+    drawRain();
+    stampRipples();
     clockBox = null;
     if (showClock) drawClock();
 
@@ -359,12 +498,7 @@
               + Math.sin((gx + gy) * 0.07 + t * 0.0006);
         w = (w + 3) / 6; // 0..1
         // ripples
-        let rip = 0;
-        for (const r of ripples) {
-          const dx = px - r.x, dy = (py - r.y) * 1.0, dist = Math.hypot(dx, dy);
-          const band = Math.abs(dist - r.r);
-          if (band < 10) rip = Math.max(rip, (1 - band / 10) * (1 - r.r / r.max));
-        }
+        const rip = ripBuf[idx];
         if (rip > 0.15) {
           push(theme.ripple, px, py, rip > 0.6 ? 'o' : rip > 0.35 ? '°' : '.');
           continue;
@@ -407,7 +541,8 @@
     if (!paused) {
       clock += dt;
       for (const k of koi) updateKoi(k, clock);
-      for (let i = ripples.length - 1; i >= 0; i--) { ripples[i].r += 2.2; if (ripples[i].r > ripples[i].max) ripples.splice(i, 1); }
+      updatePads(clock); updateBubbles(); updateRain();
+      for (let i = ripples.length - 1; i >= 0; i--) { ripples[i].r += 2.2 * (ripples[i].sp || 1); if (ripples[i].r > ripples[i].max) ripples.splice(i, 1); }
       for (let i = food.length - 1; i >= 0; i--) {
         const f = food[i];
         f.life -= 1; f.x += Math.sin(clock * 0.002 + i) * 0.08; f.y += Math.cos(clock * 0.0017 + i) * 0.06;
@@ -444,7 +579,7 @@
   canvas.addEventListener('pointerup', e => {
     if (e.button !== 0 || !downPos) return;
     clearTimeout(holdTimer);
-    if (!held) splash(downPos.x, downPos.y);
+    if (!held) { const p = padAt(downPos.x, downPos.y); if (p) bobPad(p, 1); splash(downPos.x, downPos.y); }
     downPos = null;
   });
   canvas.addEventListener('pointercancel', () => { clearTimeout(holdTimer); downPos = null; });
@@ -454,6 +589,7 @@
       theme = THEMES[e.key];
       document.body.style.background = theme.bg;
       document.body.classList.toggle('light', theme.light);
+    } else if (e.key === '5') { raining = !raining;
     } else if (e.key === 'c' || e.key === 'C') { showClock = !showClock;
     } else if (e.code === 'Space') { paused = !paused; e.preventDefault(); }
   });
