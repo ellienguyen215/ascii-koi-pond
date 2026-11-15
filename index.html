@@ -273,7 +273,7 @@
   }
 
   // ---------- clock ----------
-  let showClock = true;
+  let showClock = true, clockBox = null;
   const FONT = {
     '0': ['###', '# #', '# #', '# #', '###'], '1': [' # ', '## ', ' # ', ' # ', '###'],
     '2': ['###', '  #', '###', '#  ', '###'], '3': ['###', '  #', '###', '  #', '###'],
@@ -306,7 +306,7 @@
     // calm, clear water behind the clock so it stands out
     const dateY = y0 + 5 * sy + Math.max(2, sy);
     const bx0 = x0 - 2 * sx, bx1 = x0 + wpx + 2 * sx + 3, by0 = y0 - sy, by1 = dateY + 2;
-    for (let gy = by0; gy <= by1; gy++) for (let gx = bx0; gx <= bx1; gx++) put(gx, gy, ' ', theme.bg, 0.2);
+    clockBox = { x0: bx0, x1: bx1, y0: by0, y1: by1, fx: 3 * sx, fy: 2 * sy };
 
     let x = x0;
     for (const c of time) {
@@ -339,6 +339,7 @@
     if (!cellCh || cellCh.length !== n) { cellCh = new Array(n); cellCol = new Array(n); cellPri = new Float32Array(n); }
     cellPri.fill(0);
     koi.forEach((k, i) => drawKoi(k, i * 5 + 1));
+    clockBox = null;
     if (showClock) drawClock();
 
     // background
@@ -368,9 +369,16 @@
           push(theme.ripple, px, py, rip > 0.6 ? 'o' : rip > 0.35 ? '°' : '.');
           continue;
         }
-        const wi = Math.floor(Math.pow(w, 2.2) * WATER_CH.length * 0.999);
+        // softer (but still moving) water behind the clock, fading out at the edges
+        let calm = 0;
+        if (clockBox) {
+          const b = clockBox;
+          const dx = Math.max(b.x0 - gx, 0, gx - b.x1) / b.fx, dy = Math.max(b.y0 - gy, 0, gy - b.y1) / b.fy;
+          calm = Math.max(0, 1 - Math.hypot(dx, dy));
+        }
+        const wi = Math.floor(Math.pow(w, 2.2 + calm * 0.2) * WATER_CH.length * 0.999);
         if (wi === 0) continue;
-        push(theme.water[Math.min(3, wi - 1)], px, py, WATER_CH[wi]);
+        push(theme.water[Math.max(0, Math.min(3, wi - 1) - (calm > 0.6 ? 1 : 0))], px, py, WATER_CH[wi]);
       }
     }
 
