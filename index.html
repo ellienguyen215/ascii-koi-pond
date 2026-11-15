@@ -594,14 +594,16 @@
     whiteBuf = actx.createBuffer(1, len, actx.sampleRate); const wd = whiteBuf.getChannelData(0);
     let last = 0;
     for (let i = 0; i < len; i++) { const w = Math.random() * 2 - 1; wd[i] = w; last = (last + 0.02 * w) / 1.02; bd[i] = last * 3.5; }
-    // gentle water ambience: low rumbling noise that swells slowly
+    // light, bright stream: airy water noise (no low rumble) that gently swells
     const amb = actx.createBufferSource(); amb.buffer = brown; amb.loop = true;
-    const lp = actx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 450;
-    const ambGain = actx.createGain(); ambGain.gain.value = 0.3;
-    const lfo = actx.createOscillator(); lfo.frequency.value = 0.11;
-    const lfoAmt = actx.createGain(); lfoAmt.gain.value = 0.12;
+    const hp = actx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 260;
+    const lp = actx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1600;
+    const ambGain = actx.createGain(); ambGain.gain.value = 0.2;
+    const lfo = actx.createOscillator(); lfo.frequency.value = 0.16;
+    const lfoAmt = actx.createGain(); lfoAmt.gain.value = 0.06;
     lfo.connect(lfoAmt).connect(ambGain.gain); lfo.start();
-    amb.connect(lp).connect(ambGain).connect(master); amb.start();
+    amb.connect(hp).connect(lp).connect(ambGain).connect(master); amb.start();
+    startBrook();
     // rain hiss, volume follows how hard it's raining
     const rain = actx.createBufferSource(); rain.buffer = whiteBuf; rain.loop = true;
     const bp = actx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2400; bp.Q.value = 0.5;
@@ -630,6 +632,29 @@
     g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     src.connect(f).connect(g).connect(master); src.start(t, Math.random()); src.stop(t + dur + 0.05);
   }
+  // babbling-brook bloops and a soft wind chime now and then (C major pentatonic = happy)
+  const CHIME = [1046.5, 1174.7, 1318.5, 1568, 1760, 2093];
+  let brookStarted = false;
+  function startBrook() {
+    if (brookStarted) return; brookStarted = true;
+    const babble = () => {
+      if (live() && !paused) {
+        const n = 1 + (Math.random() * 3 | 0);
+        for (let i = 0; i < n; i++) setTimeout(() => tone(500 + Math.random() * 900, 0.025 + Math.random() * 0.025, 0.06 + Math.random() * 0.06, 1.6 + Math.random() * 0.6), i * (40 + Math.random() * 60));
+      }
+      setTimeout(babble, 180 + Math.random() * 520);
+    };
+    const chime = () => {
+      if (live() && !paused) {
+        const a = CHIME[Math.random() * CHIME.length | 0];
+        tone(a, 0.045, 2.2, 1, 'sine');
+        if (Math.random() < 0.5) setTimeout(() => tone(CHIME[Math.random() * CHIME.length | 0], 0.035, 2.4, 1, 'sine'), 220 + Math.random() * 300);
+      }
+      setTimeout(chime, 3500 + Math.random() * 6000);
+    };
+    babble(); setTimeout(chime, 2000);
+  }
+
   let lastDropSound = 0;
   const sfx = {
     plip: () => tone(700 + Math.random() * 500, 0.22, 0.14),
