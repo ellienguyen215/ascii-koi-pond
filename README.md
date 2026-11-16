@@ -1,6 +1,6 @@
 # ASCII Koi Pond
 
-A living koi pond drawn entirely with text characters. Named koi swim, turn, flick their fins and tails, and come to eat when you feed them. Feed the pond enough and a baby koi hatches and slowly grows up. A big ASCII clock and today's date sit under the water, with bobbing lily pads, lotus flowers, bubbles and rain. The pond follows the real time of day, with warm sunsets and fireflies at night.
+A living koi pond drawn entirely with text characters. Named koi swim, turn, flick their fins and tails, and come to eat when you feed them. Feed the pond enough and a baby koi hatches and slowly grows up. A big ASCII clock and today's date sit under the water, with bobbing lily pads, lotus flowers, bubbles and rain. The pond follows the real time of day and season: warm sunsets; fireflies, twinkling stars, shooting stars and a moon reflection in tonight's real phase at night; cherry blossom petals in spring, extra fireflies in summer, floating leaves in fall and snow in winter.
 
 ## Controls
 
@@ -20,7 +20,7 @@ A living koi pond drawn entirely with text characters. Named koi swim, turn, fli
 
 ## Settings
 
-Number of koi, koi size, water colour, time of day (auto / day / sunset / night), 12- or 24-hour clock, seconds, rain, sound and volume, always-show names, and a list of your koi to rename. Your settings and koi are remembered in your browser.
+Number of koi, koi size, water colour, time of day (auto / day / sunset / night), season (auto / spring / summer / fall / winter), 12- or 24-hour clock, seconds, rain, sound and volume, always-show names, and a list of your koi to rename. Your settings and koi are remembered in your browser.
 
 ## Sound
 

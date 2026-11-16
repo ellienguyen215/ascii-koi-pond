@@ -76,7 +76,7 @@
   try { saved = JSON.parse(localStorage.getItem(STORE) || '{}') || {}; } catch (e) { saved = {}; }
   const DEFAULT_COUNT = Math.max(4, Math.min(8, Math.round(innerWidth * innerHeight / 260000)));
   const prefs = Object.assign({ theme: 1, count: DEFAULT_COUNT, sizeMul: 1, h24: false, seconds: false, clock: true,
-                                tod: 'auto', sound: false, music: true, volume: 0.6, names: 'hover' }, saved.prefs || {});
+                                tod: 'auto', season: 'auto', sound: false, music: true, volume: 0.6, names: 'hover' }, saved.prefs || {});
   let saveTimer = null;
   function save() {
     clearTimeout(saveTimer);
@@ -782,7 +782,7 @@
 
   // fireflies come out at night
   const FIREFLY = '#eaff7a', FIREFLY_DIM = '#a7c44c';
-  const fireflies = Array.from({ length: 16 }, () => ({ x: Math.random() * innerWidth, y: Math.random() * innerHeight, a: Math.random() * 7, ph: Math.random() * 10 }));
+  const fireflies = Array.from({ length: 28 }, () => ({ x: Math.random() * innerWidth, y: Math.random() * innerHeight, a: Math.random() * 7, ph: Math.random() * 10 }));
   function updateFireflies() {
     for (const f of fireflies) {
       f.a += (Math.random() - 0.5) * 0.3;
@@ -793,7 +793,8 @@
   }
   function drawFireflies(t) {
     if (nightNow < 0.35) return;
-    for (const f of fireflies) {
+    const nFly = seasonNow() === 'summer' ? 28 : 16;
+    for (const f of fireflies.slice(0, nFly)) {
       const glow = Math.sin(t * 0.0025 + f.ph) * 0.5 + 0.5;
       if (glow < 1.15 - nightNow) continue;
       put(Math.floor(f.x / cw), Math.floor(f.y / ch), glow > 0.8 ? '*' : '+', glow > 0.8 ? FIREFLY : FIREFLY_DIM, 800);
@@ -825,6 +826,160 @@
   }
   const LABEL_DARK = '#fffdf5', LABEL_LIGHT = '#14241d';
 
+  // ---------- seasons ----------
+  const SEASON_LOOK = {
+    fall:   { cols: ['#e8743b', '#d9452b', '#f2b33d', '#b8662c'], rate: 0.022, max: 26 },
+    spring: { cols: ['#ffb7d0', '#ffd3e2', '#ff9cc1', '#fff0f5'], rate: 0.05, max: 40 },
+    winter: { cols: ['#f4f8ff', '#dfe9ff', '#ffffff'], rate: 0.12, max: 0 },
+    summer: null,
+  };
+  function seasonNow() {
+    if (prefs.season !== 'auto') return prefs.season;
+    const m = new Date().getMonth();
+    return m <= 1 || m === 11 ? 'winter' : m <= 4 ? 'spring' : m <= 7 ? 'summer' : 'fall';
+  }
+  const falling = [], floating = [];
+  const LEAF_SHAPES = ['<>', '<=>', '{)', '(>'];
+  function updateSeason() {
+    const sea = seasonNow(), look = SEASON_LOOK[sea];
+    if (look && Math.random() < look.rate * Math.max(1, innerWidth * innerHeight / 700000)) {
+      falling.push({ kind: sea, x: Math.random() * innerWidth, y: Math.random() * innerHeight,
+                     h: 1, sp: sea === 'winter' ? 0.012 : 0.006 + Math.random() * 0.004,
+                     drift: (Math.random() - 0.3) * 180, spin: Math.random() * 10,
+                     col: look.cols[Math.random() * look.cols.length | 0] });
+    }
+    for (let i = falling.length - 1; i >= 0; i--) {
+      const f = falling[i];
+      f.h -= f.sp; f.spin += 0.15;
+      if (f.h <= 0) {
+        falling.splice(i, 1);
+        const onPad = padAt(f.x, f.y);
+        if (f.kind === 'winter') {                       // snow melts into the water
+          if (!onPad) ripples.push({ x: f.x, y: f.y, r: 0, max: 8, band: 3, sp: 0.6, amp: 0.6 });
+          continue;
+        }
+        ripples.push({ x: f.x, y: f.y, r: 0, max: 22, band: 4, sp: 0.8, amp: 0.7 });
+        if (onPad) bobPad(onPad, 0.05);
+        const max = SEASON_LOOK[f.kind] ? SEASON_LOOK[f.kind].max : 20;
+        if (floating.length >= max) floating.shift();
+        floating.push({ kind: f.kind, x: f.x, y: f.y, vx: (Math.random() - 0.5) * 0.15, vy: (Math.random() - 0.5) * 0.1,
+                        life: 0, max: 2400 + Math.random() * 1800, col: f.col, shape: LEAF_SHAPES[Math.random() * LEAF_SHAPES.length | 0] });
+      }
+    }
+    for (let i = floating.length - 1; i >= 0; i--) {
+      const f = floating[i];
+      f.life++;
+      // koi nudge floating leaves and petals out of their way
+      for (const k of koi) {
+        const h = k.spine[0], dx = f.x - h.x, dy = f.y - h.y, d = Math.hypot(dx, dy);
+        if (d < 30 * es(k) && d > 0.1) { f.vx += dx / d * 0.08; f.vy += dy / d * 0.08; }
+      }
+      f.vx *= 0.97; f.vy *= 0.97;
+      f.x += f.vx + Math.sin(f.life * 0.004 + i) * 0.05; f.y += f.vy;
+      if (f.life > f.max || f.x < -20 || f.x > innerWidth + 20 || f.y < -20 || f.y > innerHeight + 20) floating.splice(i, 1);
+    }
+  }
+  function drawSeason() {
+    for (const f of falling) {
+      // seen from above, things fall in at a slant and get "closer" as they drop
+      const x = f.x + f.drift * f.h, y = f.y - f.h * 220;
+      let c;
+      if (f.kind === 'winter') c = f.h > 0.5 ? '*' : '.';
+      else if (f.kind === 'spring') c = ['.', ',', "'", '`'][Math.floor(f.spin) % 4];
+      else c = ['/', '-', '\\', '|'][Math.floor(f.spin) % 4];       // tumbling leaf
+      put(Math.floor(x / cw), Math.floor(y / ch), c, f.col, 750);
+    }
+    for (const f of floating) {
+      const fade = f.max - f.life < 300 ? (f.max - f.life) / 300 : 1;   // slowly sink at the end
+      const col = fade < 1 ? mixC(f.col, theme.bg, Math.round((1 - fade) * 8) / 10) : f.col;
+      const gx = Math.floor(f.x / cw), gy = Math.floor(f.y / ch);
+      if (f.kind === 'spring') put(gx, gy, '*', col, 550);
+      else for (let i = 0; i < f.shape.length; i++) put(gx + i, gy, f.shape[i], col, 550);
+    }
+  }
+
+  // ---------- moon, stars & shooting stars (night only) ----------
+  function moonPhase() {   // 0 = new, 0.5 = full
+    const synodic = 29.530588853, ref = Date.UTC(2000, 0, 6, 18, 14) / 86400000;
+    return (((Date.now() / 86400000 - ref) % synodic) + synodic) % synodic / synodic;
+  }
+  const MOON = '#fff4cc', STAR = '#d6e0ff';
+  const stars = Array.from({ length: 60 }, () => ({ x: Math.random(), y: Math.random(), ph: Math.random() * 10, sp: 0.6 + Math.random() }));
+  let shooting = null, nextShoot = 600;
+  function updateSky2() {
+    if (nightNow < 0.6) { shooting = null; return; }
+    if (shooting) {
+      shooting.t++; shooting.x += shooting.vx; shooting.y += shooting.vy;
+      if (shooting.t > shooting.life) shooting = null;
+    } else if (--nextShoot <= 0) {
+      nextShoot = 900 + Math.random() * 2400;                       // every ~15–55 seconds
+      const ang = Math.PI * (0.15 + Math.random() * 0.15) * (Math.random() < 0.5 ? 1 : -1);
+      const dir = Math.sign(ang);
+      shooting = { x: dir > 0 ? Math.random() * innerWidth * 0.5 : innerWidth * (0.5 + Math.random() * 0.5), y: Math.random() * innerHeight * 0.35,
+                   vx: Math.cos(Math.abs(ang)) * 9 * dir, vy: Math.sin(Math.abs(ang)) * 9, t: 0, life: 45 };
+    }
+  }
+  function drawNightSky(t) {
+    if (nightNow < 0.3) return;
+    const a = Math.min(1, (nightNow - 0.3) / 0.5);                 // fade in as night falls
+    const fadeTo = c => a >= 1 ? c : mixC(c, theme.bg, Math.round((1 - a) * 10) / 10);
+    // twinkling star reflections
+    for (const st of stars) {
+      const tw = Math.sin(t * 0.002 * st.sp + st.ph);
+      if (tw < 0.1) continue;
+      const col = fadeTo(tw > 0.75 ? STAR : mixC(STAR, theme.bg, 0.45));
+      NIGHT_COLS.add(col);
+      put(Math.floor(st.x * cols), Math.floor(st.y * rows), tw > 0.85 ? '+' : '.', col, 0.6);
+    }
+    // the moon's reflection, wobbling on the water, in tonight's real phase
+    const R = Math.max(38, Math.min(66, innerWidth * 0.05));
+    // put the moon somewhere in open water, away from the lily pads and the clock
+    const spots = [[0.84, 0.2], [0.16, 0.2], [0.86, 0.78], [0.14, 0.78], [0.66, 0.14], [0.34, 0.14], [0.5, 0.84]];
+    let best = spots[0], bestGap = -1e9;
+    for (const [fx, fy] of spots) {
+      const x = innerWidth * fx, y = innerHeight * fy;
+      const gap = Math.min(1e9, ...pads.map(p => Math.hypot(p.ax - x, p.ay - y) - p.R - R * 1.4));
+      if (gap > 0) { best = [fx, fy]; bestGap = gap; break; }
+      if (gap > bestGap) { bestGap = gap; best = [fx, fy]; }
+    }
+    const mx = innerWidth * best[0], my = innerHeight * best[1];
+    const ph = moonPhase(), kk = Math.cos(ph * Math.PI * 2);
+    const gx0 = Math.floor((mx - R * 1.4) / cw), gx1 = Math.ceil((mx + R * 1.4) / cw);
+    const gy0 = Math.floor((my - R) / ch), gy1 = Math.ceil((my + R * 1.6) / ch);
+    for (let gy = gy0; gy <= gy1; gy++) {
+      const wob = Math.sin(t * 0.0018 + gy * 0.9) * 1.3 + Math.sin(t * 0.0031 + gy * 0.4) * 0.6;
+      for (let gx = gx0; gx <= gx1; gx++) {
+        const px = (gx + 0.5 - wob) * cw, py = (gy + 0.5) * ch;
+        const u = (px - mx) / R, v = (py - my) / R;
+        // reflections stretch downward a little
+        const vv = v > 0 ? v / 1.5 : v;
+        const d = Math.hypot(u, vv);
+        if (d > 1) continue;
+        const w = Math.sqrt(Math.max(0, 1 - vv * vv));
+        const lit = ph < 0.5 ? u > kk * w : u < -kk * w;
+        // shimmer: some cells blink out, more toward the bottom of the reflection
+        const n = Math.sin(gx * 12.9898 + gy * 78.233 + Math.floor(t / 180)) * 43758.5453;
+        if ((n - Math.floor(n)) < (v > 0 ? 0.06 + v * 0.28 : 0.03)) continue;
+        let col, c;
+        if (lit) { col = fadeTo(d > 0.8 ? mixC(MOON, theme.bg, 0.3) : MOON); c = d > 0.82 ? ':' : v > 0.35 ? '~' : d < 0.55 ? '@' : 'o'; }
+        else { col = fadeTo(mixC(MOON, theme.bg, 0.82)); c = '.'; }   // faint "earthshine" for the dark part
+        NIGHT_COLS.add(col);
+        put(gx, gy, c, col, 0.7);
+      }
+    }
+    // shooting star
+    if (shooting) {
+      const s = shooting, fade = s.t > s.life - 12 ? (s.life - s.t) / 12 : 1;
+      for (let i = 0; i < 9; i++) {
+        const x = s.x - s.vx * i * 0.6, y = s.y - s.vy * i * 0.6;
+        const col = fadeTo(mixC('#ffffff', theme.bg, Math.min(0.9, i / 10 + (1 - fade) * 0.8)));
+        NIGHT_COLS.add(col);
+        put(Math.floor(x / cw), Math.floor(y / ch), i === 0 ? '*' : i < 3 ? '-' : '.', col, 760);
+      }
+    }
+  }
+  const NIGHT_COLS = new Set();
+
   // ---------- ripple buffer ----------
   let ripBuf;
   function stampRipples() {
@@ -852,6 +1007,9 @@
     drawBubbles();
     drawRain();
     drawFireflies(t);
+    NIGHT_COLS.clear();
+    drawNightSky(t);
+    drawSeason();
     drawLabels();
     stampRipples();
     clockBox = null;
@@ -898,7 +1056,7 @@
       push(theme.food, gx * cw, gy * ch, f.life > 400 ? 'o' : '°');
     }
 
-    const keep = new Set([theme.clock, theme.date, FIREFLY, FIREFLY_DIM, LABEL_DARK, LABEL_LIGHT, ...CLOCK_COLS]);
+    const keep = new Set([theme.clock, theme.date, FIREFLY, FIREFLY_DIM, LABEL_DARK, LABEL_LIGHT, ...CLOCK_COLS, ...NIGHT_COLS]);
     for (const [color, arr] of buckets) {
       ctx.fillStyle = keep.has(color) ? color : tint(color);
       for (let i = 0; i < arr.length; i += 3) ctx.fillText(arr[i + 2], arr[i], arr[i + 1]);
@@ -918,7 +1076,7 @@
     if (!paused) {
       clock += dt;
       for (const k of koi) updateKoi(k, clock);
-      updatePads(clock); updateBubbles(); updateRain(); updateFireflies();
+      updatePads(clock); updateBubbles(); updateRain(); updateFireflies(); updateSeason(); updateSky2();
       if ((saveTick = (saveTick || 0) + 1) % 1200 === 0) save();
       for (let i = ripples.length - 1; i >= 0; i--) { ripples[i].r += 2.2 * (ripples[i].sp || 1); if (ripples[i].r > ripples[i].max) ripples.splice(i, 1); }
       for (let i = food.length - 1; i >= 0; i--) {
@@ -1032,6 +1190,7 @@
       <label>Koi size <input type="range" id="size" min="0.6" max="1.6" step="0.05" value="${prefs.sizeMul}"></label>
       <label>Water ${seg('theme', [[1, 'Teal'], [2, 'Ink'], [3, 'Paper']], prefs.theme)}</label>
       <label>Time of day ${seg('tod', [['auto', 'Auto'], ['day', 'Day'], ['sunset', 'Sunset'], ['night', 'Night']], prefs.tod)}</label>
+      <label>Season ${seg('season', [['auto', 'Auto'], ['spring', '🌸'], ['summer', '☀️'], ['fall', '🍂'], ['winter', '❄️']], prefs.season)}</label>
       <label>Clock ${seg('clock', [[true, 'On'], [false, 'Off']], prefs.clock)}</label>
       <label>Clock style ${seg('h24', [[false, '12-hour'], [true, '24-hour']], prefs.h24)}</label>
       <label>Seconds ${seg('seconds', [[false, 'Hide'], [true, 'Show']], prefs.seconds)}</label>
