@@ -171,7 +171,7 @@
   // feeding the pond enough hatches a baby koi
   let fedCount = 0;
   function onEat(k) {
-    if (k.size < k.adult) k.size = Math.min(k.adult, k.size + 0.03);   // babies grow faster when fed
+    if (k.size < k.adult) k.size = Math.min(k.adult, k.size + 0.005);  // a little boost each time a baby eats
     burstBubbles(k.spine[0].x, k.spine[0].y, 3 + (Math.random() * 3 | 0));
     sfx.gulp();
     fedCount++;
@@ -237,7 +237,7 @@
     }
     // slowly grow up
     if (k.size < k.adult) {
-      k.size = Math.min(k.adult, k.size + 0.00003);
+      k.size = Math.min(k.adult, k.size + 0.000006);   // about 30 minutes to grow up
       if (k.size >= k.adult) { toast(`${k.name} is all grown up! 🎉`); save(); }
     }
     // steer away from edges (when chasing food, only right at the edge so it doesn't fight the food)
