@@ -92,9 +92,9 @@
 
   // ---------- themes ----------
   const THEMES = {
-    1: { name: 'teal',  bg: '#0e2a32', water: ['#12404a', '#1a5560', '#246b77', '#3a8a94'], food: '#e8d08a', ripple: '#9fe3e8', clock: '#e6fbfc', date: '#b5e6ea', pad: '#3f9e5a', padHi: '#62bd76', vein: '#9ae0a6', rim: '#2f8048', light: false },
-    2: { name: 'ink',   bg: '#050607', water: ['#101418', '#182026', '#222c34', '#33414c'], food: '#d9c27a', ripple: '#c8d4dc', clock: '#f2f5f7', date: '#c3ccd3', pad: '#3a8a50', padHi: '#55a868', vein: '#8fd49c', rim: '#2a6a3c', light: false },
-    3: { name: 'paper', bg: '#eef1ea', water: ['#dfe6dd', '#cdd8cc', '#b8c8b9', '#9fb3a3'], food: '#8a6a2a', ripple: '#5f8a86', clock: '#1f3a31', date: '#3d5c4f', pad: '#5c9e60', padHi: '#7bb87d', vein: '#3f7f46', rim: '#3a6e3f', light: true },
+    1: { name: 'teal',  bg: '#0e2a32', water: ['#12404a', '#1a5560', '#246b77', '#3a8a94'], food: '#e8d08a', ripple: '#9fe3e8', clock: '#ffe3ef', clockTop: '#ff9ec8', clockBot: '#ffe27a', date: '#ffc2dc', pad: '#3f9e5a', padHi: '#62bd76', vein: '#9ae0a6', rim: '#2f8048', light: false },
+    2: { name: 'ink',   bg: '#050607', water: ['#101418', '#182026', '#222c34', '#33414c'], food: '#d9c27a', ripple: '#c8d4dc', clock: '#ffe3ef', clockTop: '#ffa6cf', clockBot: '#9cc8ff', date: '#d9c8ff', pad: '#3a8a50', padHi: '#55a868', vein: '#8fd49c', rim: '#2a6a3c', light: false },
+    3: { name: 'paper', bg: '#eef1ea', water: ['#dfe6dd', '#cdd8cc', '#b8c8b9', '#9fb3a3'], food: '#8a6a2a', ripple: '#5f8a86', clock: '#d0608c', clockTop: '#d9588a', clockBot: '#e0894a', date: '#b85c84', pad: '#5c9e60', padHi: '#7bb87d', vein: '#3f7f46', rim: '#3a6e3f', light: true },
   };
   let theme = THEMES[prefs.theme] || THEMES[1];
 
@@ -216,9 +216,9 @@
       desired = k.a; k.fear -= 1;
     } else if (target) {
       desired = Math.atan2(target.y - head.y, target.x - head.x);
-      if (dist < 16 * es(k) + 6) {                 // close enough: gulp!
+      if (dist < 22 * es(k) + 6) {                 // close enough: gulp!
         target.life = 0; k.target = null; onEat(k);
-        k.eatT = 28;                               // glide calmly for a moment after a bite
+        k.eatT = 10;                               // glide calmly for a moment after a bite
         desired = k.a;
       }
     } else if (k.eatT > 0) {
@@ -252,7 +252,7 @@
       if (d < 40) desired += angleDiff(desired, Math.atan2(dy, dx)) * 0.15;
     }
     // turn smoothly, with a cap on how fast a fish can turn in one frame
-    const maxTurn = k.fear > 0 ? 0.09 : target ? 0.05 : 0.03;
+    const maxTurn = k.fear > 0 ? 0.09 : target ? 0.07 : 0.03;
     const turnBy = angleDiff(k.a, desired) * (target || k.fear > 0 ? 0.08 : 0.025);
     k.a += Math.max(-maxTurn, Math.min(maxTurn, turnBy));
 
@@ -260,7 +260,7 @@
     let goal = k.fear > 0 ? 3.2 : k.base;
     if (target) {
       const off = Math.abs(angleDiff(k.a, desired));
-      goal = Math.min(1.9, 0.5 + dist / 60) * (off > 1.2 ? 0.55 : 1);
+      goal = Math.min(2.1, 0.9 + dist / 50) * (off > 1.2 ? 0.7 : 1);
     } else if (k.eatT > 0) goal = 0.6;
     k.speed += (goal - k.speed) * 0.04;
     k.phase += 0.12 * k.speed + 0.03;
@@ -270,17 +270,24 @@
     head.x += Math.cos(k.a + wig * 0.3) * k.speed;
     head.y += Math.sin(k.a + wig * 0.3) * k.speed;
 
-    // body follows head (rope)
+    // body follows head (rope). Each joint can only bend so far, so the body can't fold
+    // up on itself, and the tail wag shrinks when the fish swims slowly (e.g. while eating).
     const L = 16 * es(k);
+    const wag = 0.35 * Math.min(1, 0.25 + k.speed / 1.4);
+    const MAX_BEND = 0.32;
+    let prevDir = k.a;                                  // direction the segment in front is facing
     for (let s = 1; s < SEG; s++) {
       const p = k.spine[s], q = k.spine[s - 1];
       // tail sways
       const sway = Math.sin(k.phase - s * 0.45) * (s / SEG) * 1.4;
       const perp = Math.atan2(q.y - p.y, q.x - p.x) + Math.PI / 2;
-      p.x += Math.cos(perp) * sway * 0.35;
-      p.y += Math.sin(perp) * sway * 0.35;
-      const dx = p.x - q.x, dy = p.y - q.y, d = Math.hypot(dx, dy) || 1;
-      p.x = q.x + dx / d * L; p.y = q.y + dy / d * L;
+      p.x += Math.cos(perp) * sway * wag;
+      p.y += Math.sin(perp) * sway * wag;
+      let dir = Math.atan2(q.y - p.y, q.x - p.x);
+      const bend = angleDiff(prevDir, dir);
+      if (bend > MAX_BEND) dir = prevDir + MAX_BEND; else if (bend < -MAX_BEND) dir = prevDir - MAX_BEND;
+      p.x = q.x - Math.cos(dir) * L; p.y = q.y - Math.sin(dir) * L;
+      prevDir = dir;
     }
   }
 
@@ -421,64 +428,84 @@
 
   // ---------- clock ----------
   let clockBox = null;
+  // rounded 5x7 digits; each "#" becomes a little bubble, and neighbouring bubbles melt together
   const FONT = {
-    '0': ['###', '# #', '# #', '# #', '###'], '1': [' # ', '## ', ' # ', ' # ', '###'],
-    '2': ['###', '  #', '###', '#  ', '###'], '3': ['###', '  #', '###', '  #', '###'],
-    '4': ['# #', '# #', '###', '  #', '  #'], '5': ['###', '#  ', '###', '  #', '###'],
-    '6': ['###', '#  ', '###', '# #', '###'], '7': ['###', '  #', '  #', '  #', '  #'],
-    '8': ['###', '# #', '###', '# #', '###'], '9': ['###', '# #', '###', '  #', '###'],
-    ':': [' ', '#', ' ', '#', ' '],
+    '0': ['.###.', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
+    '1': ['..#..', '.##..', '..#..', '..#..', '..#..', '..#..', '.###.'],
+    '2': ['.###.', '#...#', '....#', '...#.', '..#..', '.#...', '#####'],
+    '3': ['.###.', '#...#', '....#', '..##.', '....#', '#...#', '.###.'],
+    '4': ['...#.', '..##.', '.#.#.', '#..#.', '#####', '...#.', '...#.'],
+    '5': ['#####', '#....', '####.', '....#', '....#', '#...#', '.###.'],
+    '6': ['.###.', '#....', '#....', '####.', '#...#', '#...#', '.###.'],
+    '7': ['#####', '....#', '...#.', '..#..', '.#...', '.#...', '.#...'],
+    '8': ['.###.', '#...#', '#...#', '.###.', '#...#', '#...#', '.###.'],
+    '9': ['.###.', '#...#', '#...#', '.####', '....#', '....#', '.###.'],
+    ':': ['...', '...', '.#.', '...', '.#.', '...', '...'],
   };
-  const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const GH = 7;
+  const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+  const CLOCK_COLS = new Set();
 
   function drawClock() {
     const now = new Date();
     let h = now.getHours();
-    const ampm = prefs.h24 ? '' : h >= 12 ? 'PM' : 'AM';
+    const ampm = prefs.h24 ? '' : h >= 12 ? 'pm' : 'am';
     if (!prefs.h24) h = h % 12 || 12;
     const pad2 = n => String(n).padStart(2, '0');
     let time = (prefs.h24 ? pad2(h) : h) + ':' + pad2(now.getMinutes());
     if (prefs.seconds) time += ':' + pad2(now.getSeconds());
     const blink = prefs.seconds || now.getSeconds() % 2 === 0;
+    const tnow = performance.now();
 
-    // size each "pixel" of the big digits so the clock fits the screen
+    // size each "pixel" of the digits so the clock fits the screen
     let units = 0;
     for (const c of time) units += FONT[c][0].length + 1;
-    const sx = Math.max(2, Math.min(12, Math.floor(cols * 0.62 / units)));   // cols per pixel
-    const sy = Math.max(2, Math.round(sx * cw / ch));              // rows per pixel (keeps it square)
+    const sx = Math.max(2, Math.min(11, Math.floor(cols * 0.72 / units)));   // cols per pixel
+    const sy = Math.max(2, Math.round(sx * cw / ch));                      // rows per pixel (keeps it round)
     const gap = sx;
     let wpx = 0;
     for (const c of time) wpx += FONT[c][0].length * sx + gap;
     wpx -= gap;
     const x0 = Math.floor((cols - wpx) / 2);
-    const y0 = Math.floor(rows * 0.4 - (5 * sy) / 2);
+    const y0 = Math.floor(rows * 0.4 - (GH * sy) / 2);
 
-    // calm, clear water behind the clock so it stands out
-    const dateY = y0 + 5 * sy + Math.max(2, sy);
+    // softer water behind the clock so it stands out
+    const dateY = y0 + GH * sy + Math.max(2, sy);
     const bx0 = x0 - 2 * sx, bx1 = x0 + wpx + 2 * sx + 3, by0 = y0 - sy, by1 = dateY + 2;
     clockBox = { x0: bx0, x1: bx1, y0: by0, y1: by1, fx: 3 * sx, fy: 2 * sy };
 
+    // pastel colour fade from the top of the digits to the bottom
+    const grad = i => mixC(theme.clockTop, theme.clockBot, Math.round(i * 6) / 6);
+    CLOCK_COLS.clear();
+
     let x = x0;
-    for (const c of time) {
-      const g = FONT[c];
-      const gw = g[0].length;
-      if (c !== ':' || blink) {
-        for (let r = 0; r < 5; r++) for (let q = 0; q < gw; q++) {
-          if (g[r][q] !== '#') continue;
-          for (let yy = 0; yy < sy; yy++) for (let xx = 0; xx < sx; xx++) {
-            put(x + q * sx + xx, y0 + r * sy + yy, '#', theme.clock, 1000);
-          }
+    [...time].forEach((c, i) => {
+      const g = FONT[c], gw = g[0].length;
+      // each digit floats up and down a little, like a wave
+      const bob = Math.round(Math.sin(tnow * 0.0021 - i * 0.85) * sy * 0.6);
+      const dim = c === ':' && !blink;
+      for (let gy = -1; gy < GH * sy + 1; gy++) for (let gx = -1; gx < gw * sx + 1; gx++) {
+        const u = (gx + 0.5) / sx, v = (gy + 0.5) / sy;
+        let d = 9;
+        const qu = Math.floor(u), rv = Math.floor(v);
+        for (let r = rv - 1; r <= rv + 1; r++) for (let q = qu - 1; q <= qu + 1; q++) {
+          if (r < 0 || q < 0 || r >= GH || q >= gw || g[r][q] !== '#') continue;
+          d = Math.min(d, Math.hypot(u - q - 0.5, v - r - 0.5));
         }
+        if (d > 0.86) continue;
+        let col = grad(Math.max(0, Math.min(1, v / GH)));
+        if (dim) col = mixC(col, theme.bg, 0.65);
+        CLOCK_COLS.add(col);
+        put(x + gx, y0 + gy + bob, d < 0.66 ? 'o' : '.', col, 1000);
       }
       x += gw * sx + gap;
-    }
-    // AM / PM beside the digits
-    if (ampm) putText(ampm, x0 + wpx + gap, y0 + 5 * sy - 1, theme.clock);
-    // date underneath, letter-spaced
-    const date = (DAYS[now.getDay()] + '  ' + MONTHS[now.getMonth()] + ' ' + now.getDate() + ', ' + now.getFullYear()).toUpperCase();
-    const spaced = date.split('').join(' ');
-    putText(spaced, Math.floor((cols - spaced.length) / 2), dateY, theme.date);
+    });
+    // am / pm beside the digits
+    if (ampm) { const c = grad(1); CLOCK_COLS.add(c); putText(ampm, x0 + wpx + gap, y0 + GH * sy - 1, c); }
+    // date underneath, with two tiny fish
+    const date = `><>  ${DAYS[now.getDay()]} · ${MONTHS[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}  <><`;
+    putText(date, Math.floor((cols - date.length) / 2), dateY, theme.date);
   }
 
   function putText(str, gx, gy, col, pri = 1000) {
@@ -872,7 +899,7 @@
       push(theme.food, gx * cw, gy * ch, f.life > 400 ? 'o' : '°');
     }
 
-    const keep = new Set([theme.clock, theme.date, FIREFLY, FIREFLY_DIM, LABEL_DARK, LABEL_LIGHT]);
+    const keep = new Set([theme.clock, theme.date, FIREFLY, FIREFLY_DIM, LABEL_DARK, LABEL_LIGHT, ...CLOCK_COLS]);
     for (const [color, arr] of buckets) {
       ctx.fillStyle = keep.has(color) ? color : tint(color);
       for (let i = 0; i < arr.length; i += 3) ctx.fillText(arr[i + 2], arr[i], arr[i + 1]);
