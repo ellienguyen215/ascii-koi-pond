@@ -24,7 +24,7 @@ Number of koi, koi size, water colour, time of day (auto / day / sunset / night)
 
 ## Sound
 
-All sounds are generated in the browser (no audio files): soft water, plips when you feed, splashes, bubble pops, rain and a little chime when a baby hatches. Sound starts off; press `M` to turn it on.
+All sounds are generated in the browser (no audio files): soft water, plips when you feed, splashes, bubble pops, rain and a little chime when a baby hatches. Sound starts off; press `M` to turn it on. The music can be switched off on its own in Settings.
 
 ## Run it
 
