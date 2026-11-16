@@ -92,9 +92,9 @@
 
   // ---------- themes ----------
   const THEMES = {
-    1: { name: 'teal',  bg: '#0e2a32', water: ['#12404a', '#1a5560', '#246b77', '#3a8a94'], food: '#e8d08a', ripple: '#9fe3e8', clock: '#ffe3ef', clockTop: '#ff9ec8', clockBot: '#ffe27a', date: '#ffc2dc', pad: '#3f9e5a', padHi: '#62bd76', vein: '#9ae0a6', rim: '#2f8048', light: false },
-    2: { name: 'ink',   bg: '#050607', water: ['#101418', '#182026', '#222c34', '#33414c'], food: '#d9c27a', ripple: '#c8d4dc', clock: '#ffe3ef', clockTop: '#ffa6cf', clockBot: '#9cc8ff', date: '#d9c8ff', pad: '#3a8a50', padHi: '#55a868', vein: '#8fd49c', rim: '#2a6a3c', light: false },
-    3: { name: 'paper', bg: '#eef1ea', water: ['#dfe6dd', '#cdd8cc', '#b8c8b9', '#9fb3a3'], food: '#8a6a2a', ripple: '#5f8a86', clock: '#d0608c', clockTop: '#d9588a', clockBot: '#e0894a', date: '#b85c84', pad: '#5c9e60', padHi: '#7bb87d', vein: '#3f7f46', rim: '#3a6e3f', light: true },
+    1: { name: 'teal',  bg: '#0e2a32', water: ['#12404a', '#1a5560', '#246b77', '#3a8a94'], food: '#e8d08a', ripple: '#9fe3e8', clock: '#e6fbfc', clockTop: '#e6fbfc', clockBot: '#e6fbfc', date: '#b5e6ea', pad: '#3f9e5a', padHi: '#62bd76', vein: '#9ae0a6', rim: '#2f8048', light: false },
+    2: { name: 'ink',   bg: '#050607', water: ['#101418', '#182026', '#222c34', '#33414c'], food: '#d9c27a', ripple: '#c8d4dc', clock: '#f2f5f7', clockTop: '#f2f5f7', clockBot: '#f2f5f7', date: '#c3ccd3', pad: '#3a8a50', padHi: '#55a868', vein: '#8fd49c', rim: '#2a6a3c', light: false },
+    3: { name: 'paper', bg: '#eef1ea', water: ['#dfe6dd', '#cdd8cc', '#b8c8b9', '#9fb3a3'], food: '#8a6a2a', ripple: '#5f8a86', clock: '#1f3a31', clockTop: '#1f3a31', clockBot: '#1f3a31', date: '#3d5c4f', pad: '#5c9e60', padHi: '#7bb87d', vein: '#3f7f46', rim: '#3a6e3f', light: true },
   };
   let theme = THEMES[prefs.theme] || THEMES[1];
 
@@ -482,8 +482,7 @@
     let x = x0;
     [...time].forEach((c, i) => {
       const g = FONT[c], gw = g[0].length;
-      // each digit floats up and down a little, like a wave
-      const bob = Math.round(Math.sin(tnow * 0.0021 - i * 0.85) * sy * 0.6);
+      const bob = 0;
       const dim = c === ':' && !blink;
       for (let gy = -1; gy < GH * sy + 1; gy++) for (let gx = -1; gx < gw * sx + 1; gx++) {
         const u = (gx + 0.5) / sx, v = (gy + 0.5) / sy;
