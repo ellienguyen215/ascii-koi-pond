@@ -151,7 +151,7 @@
     return { spine, a, speed: 1, base: (size < adult ? 1.15 : 0.8) + Math.random() * 0.5, size, adult, v, vi,
              seed: o.seed || [Math.random() * 9, Math.random() * 9, Math.random() * 9],
              name: o.name || pickName(), parentName: o.parentName || null,
-             phase: Math.random() * 10, turn: 0, wanderT: 0, fear: 0 };
+             phase: Math.random() * 10, turn: 0, wanderT: 0, fear: 0, eatT: 0, target: null };
   }
   let koi = [];
   if (Array.isArray(saved.roster) && saved.roster.length) {
@@ -171,7 +171,6 @@
   // feeding the pond enough hatches a baby koi
   let fedCount = 0;
   function onEat(k) {
-    k.speed = 0.6;
     if (k.size < k.adult) k.size = Math.min(k.adult, k.size + 0.03);   // babies grow faster when fed
     burstBubbles(k.spine[0].x, k.spine[0].y, 3 + (Math.random() * 3 | 0));
     sfx.gulp();
@@ -199,18 +198,31 @@
 
   function updateKoi(k, t) {
     const head = k.spine[0];
-    // choose a heading
-    let target = null, best = 260 * 260;
-    for (const f of food) {
-      const dx = f.x - head.x, dy = f.y - head.y, d = dx * dx + dy * dy;
-      if (d < best) { best = d; target = f; }
+    // choose a heading. A koi locks onto one pellet and keeps it until it's eaten,
+    // instead of flip-flopping between pellets every frame (that caused the twitching).
+    if (k.target && (k.target.life <= 0 || !food.includes(k.target))) k.target = null;
+    if (!k.target && k.eatT <= 0) {
+      let best = 260 * 260;
+      for (const f of food) {
+        const dx = f.x - head.x, dy = f.y - head.y, d = dx * dx + dy * dy;
+        if (d < best) { best = d; k.target = f; }
+      }
     }
+    const target = k.target;
+    const dist = target ? Math.hypot(target.x - head.x, target.y - head.y) : 0;
+    k.eatT = Math.max(0, (k.eatT || 0) - 1);
     let desired;
     if (k.fear > 0) {
       desired = k.a; k.fear -= 1;
     } else if (target) {
       desired = Math.atan2(target.y - head.y, target.x - head.x);
-      if (best < 100) { target.life = 0; onEat(k); }   // eaten!
+      if (dist < 16 * es(k) + 6) {                 // close enough: gulp!
+        target.life = 0; k.target = null; onEat(k);
+        k.eatT = 28;                               // glide calmly for a moment after a bite
+        desired = k.a;
+      }
+    } else if (k.eatT > 0) {
+      desired = k.a;
     } else {
       k.wanderT -= 1;
       if (k.wanderT <= 0) { k.turn = (Math.random() - 0.5) * 0.04; k.wanderT = 60 + Math.random() * 160; }
@@ -228,21 +240,29 @@
       k.size = Math.min(k.adult, k.size + 0.00003);
       if (k.size >= k.adult) { toast(`${k.name} is all grown up! 🎉`); save(); }
     }
-    // steer away from edges
-    const m = 110;
+    // steer away from edges (when chasing food, only right at the edge so it doesn't fight the food)
+    const m = target ? 25 : 110;
     let ex = 0, ey = 0;
     if (head.x < m) ex = 1; else if (head.x > innerWidth - m) ex = -1;
     if (head.y < m) ey = 1; else if (head.y > innerHeight - m) ey = -1;
     if (ex || ey) { desired = Math.atan2(ey, ex); k.fear = 0; }
-    // avoid other koi heads a little
-    for (const o of koi) if (o !== k) {
+    // avoid other koi heads a little (but not while eating, so they can share)
+    if (!target) for (const o of koi) if (o !== k) {
       const dx = head.x - o.spine[0].x, dy = head.y - o.spine[0].y, d = Math.hypot(dx, dy);
       if (d < 40) desired += angleDiff(desired, Math.atan2(dy, dx)) * 0.15;
     }
-    k.a += angleDiff(k.a, desired) * (target || k.fear > 0 ? 0.06 : 0.025);
+    // turn smoothly, with a cap on how fast a fish can turn in one frame
+    const maxTurn = k.fear > 0 ? 0.09 : target ? 0.05 : 0.03;
+    const turnBy = angleDiff(k.a, desired) * (target || k.fear > 0 ? 0.08 : 0.025);
+    k.a += Math.max(-maxTurn, Math.min(maxTurn, turnBy));
 
-    const goal = (k.fear > 0 ? 3.2 : target ? 1.9 : k.base);
-    k.speed += (goal - k.speed) * 0.05;
+    // slow down when nearly at the food, or when the food is off to the side, so it can turn into it
+    let goal = k.fear > 0 ? 3.2 : k.base;
+    if (target) {
+      const off = Math.abs(angleDiff(k.a, desired));
+      goal = Math.min(1.9, 0.5 + dist / 60) * (off > 1.2 ? 0.55 : 1);
+    } else if (k.eatT > 0) goal = 0.6;
+    k.speed += (goal - k.speed) * 0.04;
     k.phase += 0.12 * k.speed + 0.03;
 
     if (Math.random() < 0.004) burstBubbles(head.x, head.y, 1);
