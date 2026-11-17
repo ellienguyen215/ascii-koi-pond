@@ -145,7 +145,8 @@
     if (free.length) return free[Math.random() * free.length | 0];
     return NAMES[Math.random() * NAMES.length | 0] + ' ' + (koi.length + 1);
   }
-  const es = k => k.size * prefs.sizeMul;   // effective (on-screen) size
+  const screenScale = () => Math.max(0.6, Math.min(1, Math.min(innerWidth, innerHeight * 1.4) / 900));
+  const es = k => k.size * prefs.sizeMul * screenScale();   // effective (on-screen) size
 
   function makeKoi(o = {}) {
     const vi = o.vi ?? (Math.random() * VARIETIES.length | 0);
@@ -470,7 +471,8 @@
     let units = 0;
     for (const c of time) units += FONT[c][0].length + 1;
     const sx = Math.max(2, Math.min(11, Math.floor(cols * 0.72 / units)));   // cols per pixel
-    const sy = Math.max(2, Math.round(sx * cw / ch));                      // rows per pixel (keeps it round)
+    let sy = Math.max(2, Math.round(sx * cw / ch));                        // rows per pixel (keeps it round)
+    while (sy > 1 && GH * sy > rows * 0.24) sy--;
     const gap = sx;
     let wpx = 0;
     for (const c of time) wpx += FONT[c][0].length * sx + gap;
