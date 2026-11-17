@@ -13,7 +13,8 @@
     user-select: none; pointer-events: none; transition: opacity .6s;
   }
   body.light #help { color: rgba(0,0,0,.55); background: rgba(255,255,255,.4); }
-  #help { max-width: calc(100vw - 90px); line-height: 1.5; }
+  #help { max-width: calc(100vw - 340px); line-height: 1.5; }
+  @media (max-width: 760px) { #help { display: none; } }
   #gear {
     position: fixed; right: 14px; bottom: 12px; width: 40px; height: 40px; border-radius: 50%;
     border: 1px solid rgba(255,255,255,.18); background: rgba(0,0,0,.3); color: rgba(255,255,255,.8);
@@ -21,6 +22,12 @@
   }
   #gear:hover { background: rgba(0,0,0,.5); }
   body.light #gear { background: rgba(255,255,255,.5); color: #1f3a31; border-color: rgba(0,0,0,.15); }
+  .snd { position: fixed; right: 62px; bottom: 12px; height: 40px; box-sizing: border-box; display: flex; align-items: center; gap: 8px;
+    font: 12px ui-monospace, Menlo, Consolas, monospace; color: rgba(255,255,255,.85); background: rgba(0,0,0,.3);
+    border: 1px solid rgba(255,255,255,.18); border-radius: 20px; padding: 0 14px; backdrop-filter: blur(4px); }
+  .snd span { min-width: 74px; }
+  .snd input { width: 90px; accent-color: #7fd6dc; }
+  body.light .snd { background: rgba(255,255,255,.5); color: #1f3a31; border-color: rgba(0,0,0,.15); }
   #settings {
     position: fixed; right: 14px; bottom: 62px; width: 300px; max-height: calc(100vh - 90px); overflow: auto;
     font: 12px ui-monospace, Menlo, Consolas, monospace; color: #e8f4f4;
@@ -59,7 +66,8 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div id="help">click: splash · right-click / hold: feed · 1 2 3: water · 5: rain · c: clock · m: sound · s: settings · space: pause<br>hover a koi to see its name · double-click to rename</div>
+<div id="help">click: splash · right-click / hold: feed · 1 2 3: water · 5: rain · c: clock · m: mute · s: settings · space: pause<br>hover a koi to see its name · double-click to rename</div>
+<label class="snd" id="sndBox"><span id="sndLbl">sound off</span><input id="sndVol" type="range" min="0" max="1" step="0.05" value="0" aria-label="sound volume"></label>
 <button id="gear" aria-label="Settings" title="Settings (S)">⚙</button>
 <div id="settings" hidden></div>
 <input id="rename" hidden maxlength="20" placeholder="koi name">
@@ -658,12 +666,13 @@
     return actx;
   }
   function applySound() {
-    if (!prefs.sound) { if (actx) master.gain.setTargetAtTime(0, actx.currentTime, 0.15); return; }
+    sndLbl.textContent = prefs.volume > 0 ? `sound ${Math.round(prefs.volume * 100)}%` : 'sound off';
+    if (prefs.volume <= 0) { if (actx) master.gain.setTargetAtTime(0, actx.currentTime, 0.1); return; }
     const a = ensureAudio(); if (!a) return;
     a.resume().catch(() => {});
     master.gain.setTargetAtTime(prefs.volume * 1.4, a.currentTime, 0.25);
   }
-  const live = () => prefs.sound && actx && actx.state === 'running';
+  const live = () => prefs.volume > 0 && actx && actx.state === 'running';
   function tone(f, vol, dur, rise = 1.9, type = 'sine') {
     if (!live()) return;
     const t = actx.currentTime, o = actx.createOscillator(), g = actx.createGain();
@@ -1195,9 +1204,7 @@
       <label>Clock style ${seg('h24', [[false, '12-hour'], [true, '24-hour']], prefs.h24)}</label>
       <label>Seconds ${seg('seconds', [[false, 'Hide'], [true, 'Show']], prefs.seconds)}</label>
       <label>Rain ${seg('rain', [[false, 'Off'], [true, 'On']], raining)}</label>
-      <label>Sound ${seg('sound', [[false, 'Off'], [true, 'On']], prefs.sound)}</label>
       <label>Music ${seg('music', [[false, 'Off'], [true, 'On']], prefs.music)}</label>
-      <label>Volume <input type="range" id="vol" min="0" max="1" step="0.05" value="${prefs.volume}"></label>
       <label>Names ${seg('names', [['hover', 'On hover'], ['always', 'Always']], prefs.names)}</label>
       <div class="sub">Your koi <small>(type to rename)</small></div>
       <div class="roster">${koi.map((k, i) => `<div class="koi">${swatch(k)}<input data-i="${i}" value="${k.name.replace(/"/g, '&quot;')}" maxlength="20">${k.size < k.adult ? '<small>baby</small>' : ''}</div>`).join('')}</div>
@@ -1227,26 +1234,33 @@
   panel.addEventListener('input', e => {
     const t = e.target;
     if (t.id === 'size') { prefs.sizeMul = +t.value; save(); }
-    else if (t.id === 'vol') { prefs.volume = +t.value; applySound(); save(); }
     else if (t.dataset.i != null) { const k = koi[+t.dataset.i]; if (k && t.value.trim()) { k.name = t.value.trim(); save(); } }
   });
   panel.addEventListener('keydown', e => e.stopPropagation());
 
   // ---------- keys ----------
   addEventListener('keydown', e => {
-    if (e.target.tagName === 'INPUT') return;
+    if (e.target.tagName === 'INPUT' && e.target.type !== 'range') return;
     if (THEMES[e.key]) setTheme(e.key);
     else if (e.key === '5') { raining = !raining; refreshSettings(); }
     else if (e.key === 'c' || e.key === 'C') { prefs.clock = !prefs.clock; save(); refreshSettings(); }
-    else if (e.key === 'm' || e.key === 'M') { prefs.sound = !prefs.sound; applySound(); save(); refreshSettings(); toast(prefs.sound ? 'Sound on 🔊' : 'Sound off 🔇'); }
+    else if (e.key === 'm' || e.key === 'M') { if (prefs.volume > 0) { lastVol = prefs.volume; prefs.volume = 0; } else prefs.volume = lastVol; sndVol.value = prefs.volume; applySound(); save(); toast(prefs.volume > 0 ? 'Sound on' : 'Sound off'); }
     else if (e.key === 's' || e.key === 'S') openSettings();
     else if (e.key === 'Escape') openSettings(false);
     else if (e.code === 'Space') { paused = !paused; e.preventDefault(); }
   });
 
   // browsers only allow sound after you interact with the page
-  if (prefs.sound) addEventListener('pointerdown', () => applySound(), { once: true });
-  addEventListener('keydown', () => { if (prefs.sound) applySound(); }, { once: true });
+  // one slider for all the sound (all the way left = off)
+  const sndVol = document.getElementById('sndVol'), sndLbl = document.getElementById('sndLbl');
+  if (prefs.sound === false || prefs.sound === undefined) { if (prefs._v2 !== true) prefs.volume = 0; }
+  prefs._v2 = true; delete prefs.sound;
+  sndVol.value = prefs.volume; let lastVol = prefs.volume || 0.6;
+  sndVol.addEventListener('input', () => { prefs.volume = +sndVol.value; applySound(); save(); });
+  sndVol.addEventListener('pointerdown', e => e.stopPropagation());
+  applySound();
+  if (prefs.volume > 0) addEventListener('pointerdown', () => applySound(), { once: true });
+  addEventListener('keydown', () => { if (prefs.volume > 0) applySound(); }, { once: true });
 
   setTimeout(() => help.style.opacity = '0.35', 8000);
 })();
